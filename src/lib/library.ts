@@ -199,29 +199,33 @@ export class Library {
     }
   }
 
-  private async thumbnail(file: string, fileTime: number): Promise<string | undefined> {
-    const existing = await stat(this.thumbnailPath(file)).catch(() => undefined);
-    if (existing && existing.mtimeMs >= fileTime) return this.thumbnailPath(file);
-    return this.makeThumbnail(file);
-  }
-
   // Files that you drop into the folder yourself also show up. They use the file time.
+  // list() only uses thumbnails that already exist, so the grid opens at once. See makeThumbnails().
   async list(): Promise<Meme[]> {
     await mkdir(this.folder, { recursive: true });
     const index = await this.readIndex();
     const files = (await readdir(this.folder)).filter((file) => !file.startsWith(".") && isImagePath(file));
-    const memes: Meme[] = [];
-    // Only 4 at a time, because the first list of a big folder can make many thumbnails.
-    for (let i = 0; i < files.length; i += 4) {
-      const batch = files.slice(i, i + 4).map(async (file) => {
+    const memes = await Promise.all(
+      files.map(async (file) => {
         const path = join(this.folder, file);
         const fileTime = (await stat(path)).mtimeMs;
+        const thumbnail = await stat(this.thumbnailPath(file)).catch(() => undefined);
         const entry = index[file] ?? { title: basename(file, extname(file)), tags: [], addedAt: fileTime, useCount: 0 };
-        return { ...entry, file, path, thumbnail: await this.thumbnail(file, fileTime) };
-      });
-      memes.push(...(await Promise.all(batch)));
-    }
+        const fresh = thumbnail && thumbnail.mtimeMs >= fileTime;
+        return { ...entry, file, path, thumbnail: fresh ? this.thumbnailPath(file) : undefined };
+      }),
+    );
     return memes.sort((a, b) => (b.lastUsedAt ?? b.addedAt) - (a.lastUsedAt ?? a.addedAt));
+  }
+
+  // Makes the missing thumbnails, 4 at a time, and returns how many it made.
+  async makeThumbnails(memes: Meme[]): Promise<number> {
+    let made = 0;
+    for (let i = 0; i < memes.length; i += 4) {
+      const results = await Promise.all(memes.slice(i, i + 4).map((meme) => this.makeThumbnail(meme.file)));
+      made += results.filter(Boolean).length;
+    }
+    return made;
   }
 
   // Returns the saved meme and whether it was already in the library.

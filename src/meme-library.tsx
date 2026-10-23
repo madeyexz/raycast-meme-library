@@ -18,7 +18,7 @@ import {
   Keyboard,
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Library, Meme, Source } from "./lib/library";
 import { getLibrary, readClipboardSource, saveSource } from "./lib/save";
 
@@ -31,6 +31,17 @@ export default function Command() {
   const { primaryAction } = getPreferenceValues<Preferences>();
   const [columns, setColumns] = useState("5");
   const { data: memes = [], isLoading, revalidate } = usePromise(() => library.list());
+
+  // Show the grid at once, then make missing thumbnails (for example, for files dropped into the folder).
+  const thumbnailsStarted = useRef(false);
+  useEffect(() => {
+    const missing = memes.filter((meme) => !meme.thumbnail);
+    if (isLoading || thumbnailsStarted.current || missing.length === 0) return;
+    thumbnailsStarted.current = true;
+    library.makeThumbnails(missing).then((made) => {
+      if (made > 0) revalidate();
+    });
+  }, [memes, isLoading]);
 
   const empty = (
     <Grid.EmptyView
