@@ -71,7 +71,10 @@ test("Library saves downloads by content type, skips duplicates, and lists recen
     assert.equal(top.useCount, 1);
 
     await library.remove(png.meme);
-    assert.deepEqual((await readdir(library.folder)).sort(), [".meme-library.json", ".thumbnails", first.meme.file, "notes.txt"].sort());
+    assert.deepEqual(
+      (await readdir(library.folder)).sort(),
+      [".meme-library.json", ".thumbnails", first.meme.file, "notes.txt"].sort(),
+    );
   } finally {
     server.close();
   }
@@ -81,7 +84,9 @@ test("Library keeps every entry when saves run at the same time, and backs up a 
   const library = new Library(await mkdtemp(join(tmpdir(), "memes-")));
   // Six different images: the same GIF header with a different trailing byte each.
   const images = Array.from({ length: 6 }, (_, i) => Buffer.concat([GIF, Buffer.from([i])]));
-  const results = await Promise.all(images.map((data, i) => library.add(data, `meme-${i}.gif`)));
+  // Each Raycast command runs in its own JavaScript context, like this second copy of the module.
+  const other = new (await import("../src/lib/library.ts?other-command")).Library(library.folder);
+  const results = await Promise.all(images.map((data, i) => (i % 2 ? other : library).add(data, `meme-${i}.gif`)));
   const index = JSON.parse(await readFile(join(library.folder, ".meme-library.json"), "utf8"));
   assert.deepEqual(Object.keys(index).sort(), results.map((r) => r.meme.file).sort());
 

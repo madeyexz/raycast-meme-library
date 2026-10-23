@@ -26,6 +26,8 @@ export type Source =
   { kind: "url"; url: string } | { kind: "file"; path: string } | { kind: "raw-image" } | { kind: "none" };
 
 const INDEX_FILE = ".meme-library.json";
+const LOCK_FOLDER = ".meme-library.lock";
+const STALE_LOCK_MS = 30_000;
 const THUMBNAIL_FOLDER = ".thumbnails";
 const THUMBNAIL_SIZE = 512;
 const DOWNLOAD_TIMEOUT_MS = 30_000;
@@ -140,13 +142,36 @@ export class Library {
   private changeIndex<T>(change: (index: Index) => Promise<T>): Promise<T> {
     const run = (queues.get(this.folder) ?? Promise.resolve()).then(async () => {
       await mkdir(this.folder, { recursive: true });
-      return change(await this.readIndex());
+      return this.withLock(async () => change(await this.readIndex()));
     });
     queues.set(
       this.folder,
       run.catch(() => undefined),
     );
     return run;
+  }
+
+  // Each Raycast command runs in its own JavaScript context, so the queue above cannot stop Save Meme
+  // and the grid from changing the index at the same time. mkdir is atomic, so a lock folder can.
+  private async withLock<T>(work: () => Promise<T>): Promise<T> {
+    const lock = join(this.folder, LOCK_FOLDER);
+    for (;;) {
+      try {
+        await mkdir(lock);
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        // A command that crashed can leave the lock behind.
+        const age = Date.now() - ((await stat(lock).catch(() => undefined))?.mtimeMs ?? Date.now());
+        if (age > STALE_LOCK_MS) await rm(lock, { recursive: true, force: true });
+        else await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    try {
+      return await work();
+    } finally {
+      await rm(lock, { recursive: true, force: true });
+    }
   }
 
   private thumbnailPath(file: string): string {
