@@ -17,9 +17,16 @@ export default async function Command() {
   try {
     const finderImages = await selectedFinderImages();
     if (finderImages.length > 0) {
-      const results = await Promise.all(finderImages.map((path) => library.addFile(path)));
-      const added = results.filter((result) => !result.duplicate).length;
-      await showHUD(`Saved ${added} meme${added === 1 ? "" : "s"} from Finder`);
+      // One at a time: each add rewrites the shared index file, so parallel adds lose entries.
+      let added = 0;
+      for (const path of finderImages) {
+        if (!(await library.addFile(path)).duplicate) added++;
+      }
+      const skipped = finderImages.length - added;
+      await showHUD(
+        `Saved ${added} meme${added === 1 ? "" : "s"} from Finder` +
+          (skipped > 0 ? `, ${skipped} already in your library` : ""),
+      );
       return;
     }
     const toast = await showToast({ style: Toast.Style.Animated, title: "Saving meme…" });
