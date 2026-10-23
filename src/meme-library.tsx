@@ -33,14 +33,13 @@ export default function Command() {
   const { data: memes = [], isLoading, revalidate } = usePromise(() => library.list());
 
   // Show the grid at once, then make missing thumbnails (for example, for files dropped into the folder).
+  // The grid uses them the next time it opens. A reload now would blank every cell while Raycast loads the new image.
   const thumbnailsStarted = useRef(false);
   useEffect(() => {
     const missing = memes.filter((meme) => !meme.thumbnail);
     if (isLoading || thumbnailsStarted.current || missing.length === 0) return;
     thumbnailsStarted.current = true;
-    library.makeThumbnails(missing).then((made) => {
-      if (made > 0) revalidate();
-    });
+    library.makeThumbnails(missing);
   }, [memes, isLoading]);
 
   const empty = (

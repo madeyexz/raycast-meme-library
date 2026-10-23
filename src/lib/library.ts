@@ -218,14 +218,11 @@ export class Library {
     return memes.sort((a, b) => (b.lastUsedAt ?? b.addedAt) - (a.lastUsedAt ?? a.addedAt));
   }
 
-  // Makes the missing thumbnails, 4 at a time, and returns how many it made.
-  async makeThumbnails(memes: Meme[]): Promise<number> {
-    let made = 0;
+  // Makes the missing thumbnails, 4 at a time.
+  async makeThumbnails(memes: Meme[]): Promise<void> {
     for (let i = 0; i < memes.length; i += 4) {
-      const results = await Promise.all(memes.slice(i, i + 4).map((meme) => this.makeThumbnail(meme.file)));
-      made += results.filter(Boolean).length;
+      await Promise.all(memes.slice(i, i + 4).map((meme) => this.makeThumbnail(meme.file)));
     }
-    return made;
   }
 
   // Returns the saved meme and whether it was already in the library.
