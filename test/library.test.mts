@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { download, Library, pickSource } from "../src/lib/library.ts";
+import { detectImageType, download, isPostUrl, isVideo, Library, pickSource, videoToGif } from "../src/lib/library.ts";
 
 // Smallest valid GIF89a and PNG headers. The library checks magic bytes, not extensions.
 const GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
@@ -110,4 +111,26 @@ test("download stops a slow server after the time limit", async () => {
     server.closeAllConnections();
     server.close();
   }
+});
+
+test("a post link is detected, and an MP4 becomes a looping GIF", async (t) => {
+  assert.equal(isPostUrl("https://x.com/someone/status/1850000000000000000?s=20"), true);
+  assert.equal(isPostUrl("https://www.threads.com/@someone/post/DAbc123"), true);
+  assert.equal(isPostUrl("https://x.com/someone"), false);
+  assert.equal(isPostUrl("https://media.example.com/cat.gif"), false);
+
+  const folder = await mkdtemp(join(tmpdir(), "video-"));
+  const mp4 = join(folder, "clip.mp4");
+  try {
+    execFileSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=1:size=640x360:rate=30", "-pix_fmt", "yuv420p", mp4]);
+  } catch {
+    t.skip("ffmpeg is not installed");
+    return;
+  }
+  const video = await readFile(mp4);
+  assert.equal(isVideo(video), true);
+  assert.equal(isVideo(PNG), false);
+  const gif = await videoToGif(video);
+  assert.equal(detectImageType(gif), "gif");
+  assert.ok(gif.includes(Buffer.from("NETSCAPE2.0")), "the GIF loops");
 });

@@ -4,7 +4,7 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { download, Library, Meme, pickSource, Source } from "./library";
+import { download, findPostVideo, isPostUrl, isVideo, Library, Meme, pickSource, Source, videoToGif } from "./library";
 
 export function getLibrary(): Library {
   const { libraryFolder } = getPreferenceValues<Preferences>();
@@ -48,8 +48,9 @@ export async function readClipboardSource(offset = 0): Promise<Source> {
 export async function saveSource(library: Library, source: Source): Promise<{ meme: Meme; duplicate: boolean }> {
   switch (source.kind) {
     case "url": {
-      const { data, name } = await download(source.url);
-      return library.add(data, name);
+      const url = isPostUrl(source.url) ? await findPostVideo(source.url) : source.url;
+      const { data, name } = await download(url);
+      return isVideo(data) ? library.add(await videoToGif(data), name) : library.add(data, name);
     }
     case "file":
       return library.addFile(source.path);

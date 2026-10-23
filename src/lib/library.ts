@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -100,6 +100,94 @@ export async function download(url: string, timeoutMs = DOWNLOAD_TIMEOUT_MS): Pr
       throw new Error(`Download timed out after ${Math.round(timeoutMs / 1000)} s`);
     }
     throw error;
+  }
+}
+
+// X and Threads show "GIFs" as MP4 videos. These helpers find the MP4 behind a post link
+// and convert it to a real GIF, so the meme still loops when you paste it.
+
+export function isVideo(data: Buffer): boolean {
+  const ascii = data.subarray(4, 12).toString("latin1");
+  return ascii.startsWith("ftyp") && !/^ftyp(heic|heix|mif1|avif)/.test(ascii);
+}
+
+const X_POST = /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/[^/]+\/status\/(\d+)/i;
+const THREADS_POST = /^https?:\/\/(?:www\.)?threads\.(?:net|com)\/@[^/]+\/post\//i;
+
+export function isPostUrl(url: string): boolean {
+  return X_POST.test(url) || THREADS_POST.test(url);
+}
+
+type XMedia = {
+  type?: string;
+  video_info?: { variants?: { content_type?: string; url?: string; bitrate?: number }[] };
+};
+
+// Returns the MP4 URL of the first GIF or video in the post.
+export async function findPostVideo(url: string, timeoutMs = DOWNLOAD_TIMEOUT_MS): Promise<string> {
+  const signal = AbortSignal.timeout(timeoutMs);
+  const id = url.match(X_POST)?.[1];
+  if (id) {
+    // The public embed endpoint that X uses for embedded posts. It does not need a login.
+    const token = ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, "");
+    const response = await fetch(`https://cdn.syndication.twimg.com/tweet-result?id=${id}&token=${token}`, { signal });
+    if (!response.ok) throw new Error(`Could not read the X post (${response.status})`);
+    const post = (await response.json()) as { mediaDetails?: XMedia[] };
+    const media =
+      post.mediaDetails?.find((item) => item.type === "animated_gif") ??
+      post.mediaDetails?.find((item) => item.type === "video");
+    const mp4 = media?.video_info?.variants
+      ?.filter((variant) => variant.content_type === "video/mp4" && variant.url)
+      .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0]?.url;
+    if (!mp4) throw new Error("This X post has no GIF or video");
+    return mp4;
+  }
+  const response = await fetch(url, {
+    signal,
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+    },
+  });
+  if (!response.ok) throw new Error(`Could not read the Threads post (${response.status})`);
+  const html = await response.text();
+  const found =
+    html.match(/<meta[^>]+property=["']og:video(?::secure_url|:url)?["'][^>]+content=["']([^"']+)["']/i)?.[1] ??
+    html.match(/"video_versions":\s*\[\s*\{[^}]*?"url":\s*"([^"]+)"/)?.[1];
+  if (!found) throw new Error("No video found in this Threads post. Open it in the browser and use Copy Video Address");
+  return JSON.parse(`"${decodeEntities(found).replace(/"/g, '\\"')}"`) as string;
+}
+
+const FFMPEG_PATHS = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"];
+
+// Raycast does not use your shell PATH, so look in the usual Homebrew folders.
+async function findFfmpeg(): Promise<string> {
+  for (const path of FFMPEG_PATHS) {
+    if (await stat(path).catch(() => undefined)) return path;
+  }
+  throw new Error("Install ffmpeg to save videos as GIFs: brew install ffmpeg");
+}
+
+export async function videoToGif(video: Buffer): Promise<Buffer> {
+  const ffmpeg = await findFfmpeg();
+  const base = join(tmpdir(), `meme-library-${randomUUID()}`);
+  try {
+    await writeFile(`${base}.mp4`, video);
+    // A palette made from the video gives much better colors than the default GIF palette.
+    await promisify(execFile)(ffmpeg, [
+      "-y",
+      "-i",
+      `${base}.mp4`,
+      "-vf",
+      "fps=15,scale='min(480,iw)':-2:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse",
+      "-loop",
+      "0",
+      `${base}.gif`,
+    ]);
+    return await readFile(`${base}.gif`);
+  } finally {
+    await rm(`${base}.mp4`, { force: true });
+    await rm(`${base}.gif`, { force: true });
   }
 }
 
