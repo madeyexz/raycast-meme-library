@@ -147,20 +147,17 @@ export async function findPostVideo(url: string, timeoutMs = DOWNLOAD_TIMEOUT_MS
     if (!mp4) throw new Error("This X post has no GIF or video");
     return mp4;
   }
-  const response = await fetch(url, {
-    signal,
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
-    },
-  });
-  if (!response.ok) throw new Error(`Could not read the Threads post (${response.status})`);
-  const html = await response.text();
-  const found =
-    html.match(/<meta[^>]+property=["']og:video(?::secure_url|:url)?["'][^>]+content=["']([^"']+)["']/i)?.[1] ??
-    html.match(/"video_versions":\s*\[\s*\{[^}]*?"url":\s*"([^"]+)"/)?.[1];
-  if (!found) throw new Error("No video found in this Threads post. Open it in the browser and use Copy Video Address");
-  return JSON.parse(`"${decodeEntities(found).replace(/"/g, '\\"')}"`) as string;
+  // Threads shows a login page to scripts, so the post link has no media URL (tested on a real Mac).
+  throw new Error(
+    "Threads needs a login. Right-click the GIF → Open Link in New Tab, then right-click the GIF → Copy Image, and save again",
+  );
+}
+
+// Giphy URLs on Threads and other sites point to small previews (for example 200.gif).
+// Returns the URL of the full-size original GIF.
+export function fullGiphyUrl(url: string): string {
+  const id = url.match(/^https?:\/\/media\d*\.giphy\.com\/media\/(?:v1\.[^/]+\/)?([A-Za-z0-9]+)\/[^/]+$/i)?.[1];
+  return id ? `https://media.giphy.com/media/${id}/giphy.gif` : url;
 }
 
 const FFMPEG_PATHS = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"];

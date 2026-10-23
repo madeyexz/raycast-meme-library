@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { detectImageType, download, isPostUrl, isVideo, Library, pickSource, videoToGif } from "../src/lib/library.ts";
+import { detectImageType, download, fullGiphyUrl, isPostUrl, isVideo, Library, pickSource, videoToGif } from "../src/lib/library.ts";
 
 // Smallest valid GIF89a and PNG headers. The library checks magic bytes, not extensions.
 const GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
@@ -118,6 +118,12 @@ test("a post link is detected, and an MP4 becomes a looping GIF", async (t) => {
   assert.equal(isPostUrl("https://www.threads.com/@someone/post/DAbc123"), true);
   assert.equal(isPostUrl("https://x.com/someone"), false);
   assert.equal(isPostUrl("https://media.example.com/cat.gif"), false);
+  // Threads embeds a 200 px Giphy preview; the save uses the original GIF.
+  assert.equal(
+    fullGiphyUrl("https://media2.giphy.com/media/v1.Y2lkPTc5/l0HlBO7eyXzSZkJri/200.gif?cid=1&rid=200.gif"),
+    "https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif",
+  );
+  assert.equal(fullGiphyUrl("https://media.example.com/cat.gif"), "https://media.example.com/cat.gif");
 
   const folder = await mkdtemp(join(tmpdir(), "video-"));
   const mp4 = join(folder, "clip.mp4");

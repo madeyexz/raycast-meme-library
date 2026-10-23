@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import {
   download,
   findPostVideo,
+  fullGiphyUrl,
   isAnimatedWebp,
   isPostUrl,
   isVideo,
@@ -67,7 +68,7 @@ export async function toGifIfNeeded(data: Buffer): Promise<Buffer> {
 export async function saveSource(library: Library, source: Source): Promise<{ meme: Meme; duplicate: boolean }> {
   switch (source.kind) {
     case "url": {
-      const url = isPostUrl(source.url) ? await findPostVideo(source.url) : source.url;
+      const url = isPostUrl(source.url) ? await findPostVideo(source.url) : fullGiphyUrl(source.url);
       const { data, name } = await download(url);
       return library.add(await toGifIfNeeded(data), name);
     }
