@@ -148,9 +148,7 @@ export async function findPostVideo(url: string, timeoutMs = DOWNLOAD_TIMEOUT_MS
     return mp4;
   }
   // Threads shows a login page to scripts, so the post link has no media URL (tested on a real Mac).
-  throw new Error(
-    "Threads needs a login. Right-click the GIF → Open Link in New Tab, then right-click the GIF → Copy Image, and save again",
-  );
+  throw new Error("Threads needs a login. Click the GIF to open it, then use Copy Image");
 }
 
 // Giphy URLs on Threads and other sites point to small previews (for example 200.gif).
