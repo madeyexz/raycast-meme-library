@@ -114,6 +114,11 @@ export function isVideo(data: Buffer): boolean {
 const X_POST = /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/[^/]+\/status\/(\d+)/i;
 const THREADS_POST = /^https?:\/\/(?:www\.)?threads\.(?:net|com)\/@[^/]+\/post\//i;
 
+// An animated WebP has an ANIM chunk. Some apps paste it as one still frame, so it is converted to GIF.
+export function isAnimatedWebp(data: Buffer): boolean {
+  return detectImageType(data) === "webp" && data.subarray(0, 64).includes(Buffer.from("ANIM"));
+}
+
 export function isPostUrl(url: string): boolean {
   return X_POST.test(url) || THREADS_POST.test(url);
 }
@@ -168,16 +173,16 @@ async function findFfmpeg(): Promise<string> {
   throw new Error("Install ffmpeg to save videos as GIFs: brew install ffmpeg");
 }
 
-export async function videoToGif(video: Buffer): Promise<Buffer> {
+export async function videoToGif(video: Buffer, extension = ".mp4"): Promise<Buffer> {
   const ffmpeg = await findFfmpeg();
   const base = join(tmpdir(), `meme-library-${randomUUID()}`);
   try {
-    await writeFile(`${base}.mp4`, video);
+    await writeFile(`${base}${extension}`, video);
     // A palette made from the video gives much better colors than the default GIF palette.
     await promisify(execFile)(ffmpeg, [
       "-y",
       "-i",
-      `${base}.mp4`,
+      `${base}${extension}`,
       "-vf",
       "fps=15,scale='min(480,iw)':-2:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse",
       "-loop",
@@ -186,7 +191,7 @@ export async function videoToGif(video: Buffer): Promise<Buffer> {
     ]);
     return await readFile(`${base}.gif`);
   } finally {
-    await rm(`${base}.mp4`, { force: true });
+    await rm(`${base}${extension}`, { force: true });
     await rm(`${base}.gif`, { force: true });
   }
 }

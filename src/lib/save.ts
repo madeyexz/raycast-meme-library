@@ -2,9 +2,20 @@ import { Clipboard, getPreferenceValues } from "@raycast/api";
 import { execFile } from "node:child_process";
 import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
-import { download, findPostVideo, isPostUrl, isVideo, Library, Meme, pickSource, Source, videoToGif } from "./library";
+import {
+  download,
+  findPostVideo,
+  isAnimatedWebp,
+  isPostUrl,
+  isVideo,
+  Library,
+  Meme,
+  pickSource,
+  Source,
+  videoToGif,
+} from "./library";
 
 export function getLibrary(): Library {
   const { libraryFolder } = getPreferenceValues<Preferences>();
@@ -45,15 +56,23 @@ export async function readClipboardSource(offset = 0): Promise<Source> {
   return source;
 }
 
+// Videos and animated WebP files become GIFs, so they loop in every app. If ffmpeg cannot read
+// an animated WebP (older ffmpeg versions), the WebP is saved as it is.
+export async function toGifIfNeeded(data: Buffer): Promise<Buffer> {
+  if (isVideo(data)) return videoToGif(data);
+  if (isAnimatedWebp(data)) return videoToGif(data, ".webp").catch(() => data);
+  return data;
+}
+
 export async function saveSource(library: Library, source: Source): Promise<{ meme: Meme; duplicate: boolean }> {
   switch (source.kind) {
     case "url": {
       const url = isPostUrl(source.url) ? await findPostVideo(source.url) : source.url;
       const { data, name } = await download(url);
-      return isVideo(data) ? library.add(await videoToGif(data), name) : library.add(data, name);
+      return library.add(await toGifIfNeeded(data), name);
     }
     case "file":
-      return library.addFile(source.path);
+      return library.add(await toGifIfNeeded(await readFile(source.path)), basename(source.path));
     case "raw-image": {
       const data = await readRawClipboardImage();
       if (!data) throw new Error("Copy an image, a GIF, or an image URL first");
