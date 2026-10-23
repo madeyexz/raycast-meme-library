@@ -60,7 +60,7 @@ export default function Command() {
       {memes.map((meme) => (
         <Grid.Item
           key={meme.file}
-          content={{ source: meme.path }}
+          content={{ source: meme.thumbnail ?? meme.path }}
           title={meme.title}
           subtitle={meme.tags.join(", ")}
           keywords={meme.tags}

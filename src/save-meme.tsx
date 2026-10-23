@@ -17,7 +17,6 @@ export default async function Command() {
   try {
     const finderImages = await selectedFinderImages();
     if (finderImages.length > 0) {
-      // One at a time: each add rewrites the shared index file, so parallel adds lose entries.
       let added = 0;
       for (const path of finderImages) {
         if (!(await library.addFile(path)).duplicate) added++;
@@ -29,9 +28,10 @@ export default async function Command() {
       );
       return;
     }
-    const toast = await showToast({ style: Toast.Style.Animated, title: "Saving meme…" });
-    const { meme, duplicate } = await saveSource(library, await readClipboardSource());
-    toast.hide();
+    const source = await readClipboardSource();
+    // A download can take seconds. A HUD shows even when the Raycast window is closed.
+    if (source.kind === "url" && !source.url.startsWith("data:")) await showHUD("Downloading meme…");
+    const { meme, duplicate } = await saveSource(library, source);
     await showHUD(duplicate ? "Already in your meme library" : `Saved ${meme.file.endsWith(".gif") ? "GIF" : "image"}`);
   } catch (error) {
     await showToast({

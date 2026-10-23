@@ -1,13 +1,17 @@
-import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
+import { promisify } from "node:util";
 
 // This module has no Raycast imports, so you can test it with plain Node.
 
 export type Meme = {
   file: string;
   path: string;
+  // A small static PNG for the grid. Raycast decodes every frame of a GIF thumbnail, so big GIFs load slowly.
+  thumbnail?: string;
   title: string;
   tags: string[];
   addedAt: number;
@@ -15,13 +19,16 @@ export type Meme = {
   useCount: number;
 };
 
-type Entry = Omit<Meme, "file" | "path">;
+type Entry = Omit<Meme, "file" | "path" | "thumbnail">;
 type Index = Record<string, Entry>;
 
 export type Source =
   { kind: "url"; url: string } | { kind: "file"; path: string } | { kind: "raw-image" } | { kind: "none" };
 
 const INDEX_FILE = ".meme-library.json";
+const THUMBNAIL_FOLDER = ".thumbnails";
+const THUMBNAIL_SIZE = 512;
+const DOWNLOAD_TIMEOUT_MS = 30_000;
 const EXTENSIONS: Record<string, string> = {
   gif: ".gif",
   png: ".png",
@@ -71,18 +78,31 @@ export function detectImageType(data: Buffer): keyof typeof EXTENSIONS | undefin
   return undefined;
 }
 
-export async function download(url: string): Promise<{ data: Buffer; name?: string }> {
+export async function download(url: string, timeoutMs = DOWNLOAD_TIMEOUT_MS): Promise<{ data: Buffer; name?: string }> {
   if (url.startsWith("data:")) {
     const comma = url.indexOf(",");
     const meta = url.slice(0, comma);
     const body = url.slice(comma + 1);
     return { data: meta.endsWith(";base64") ? Buffer.from(body, "base64") : Buffer.from(decodeURIComponent(body)) };
   }
-  const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh) Raycast Meme Library" } });
-  if (!response.ok) throw new Error(`Download failed (${response.status})`);
-  const name = decodeURIComponent(basename(new URL(response.url || url).pathname));
-  return { data: Buffer.from(await response.arrayBuffer()), name };
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh) Raycast Meme Library" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) throw new Error(`Download failed (${response.status})`);
+    const name = decodeURIComponent(basename(new URL(response.url || url).pathname));
+    return { data: Buffer.from(await response.arrayBuffer()), name };
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      throw new Error(`Download timed out after ${Math.round(timeoutMs / 1000)} s`);
+    }
+    throw error;
+  }
 }
+
+// Index changes in this process run one at a time, so two saves cannot overwrite each other's entries.
+const queues = new Map<string, Promise<unknown>>();
 
 export class Library {
   readonly folder: string;
@@ -92,17 +112,72 @@ export class Library {
   }
 
   private async readIndex(): Promise<Index> {
+    const target = join(this.folder, INDEX_FILE);
+    let text: string;
     try {
-      return JSON.parse(await readFile(join(this.folder, INDEX_FILE), "utf8")) as Index;
+      text = await readFile(target, "utf8");
     } catch {
       return {};
     }
+    try {
+      const index: unknown = JSON.parse(text);
+      if (index && typeof index === "object" && !Array.isArray(index)) return index as Index;
+    } catch {
+      // Handled below.
+    }
+    // Keep a damaged index as a backup. If we overwrite it, all titles and tags are lost.
+    await rename(target, join(this.folder, `.meme-library.damaged-${Date.now()}.json`)).catch(() => undefined);
+    return {};
   }
 
   private async writeIndex(index: Index): Promise<void> {
     const target = join(this.folder, INDEX_FILE);
-    await writeFile(`${target}.tmp`, JSON.stringify(index, null, 2));
-    await rename(`${target}.tmp`, target);
+    const temp = `${target}.${randomUUID()}.tmp`;
+    await writeFile(temp, JSON.stringify(index, null, 2));
+    await rename(temp, target);
+  }
+
+  private changeIndex<T>(change: (index: Index) => Promise<T>): Promise<T> {
+    const run = (queues.get(this.folder) ?? Promise.resolve()).then(async () => {
+      await mkdir(this.folder, { recursive: true });
+      return change(await this.readIndex());
+    });
+    queues.set(
+      this.folder,
+      run.catch(() => undefined),
+    );
+    return run;
+  }
+
+  private thumbnailPath(file: string): string {
+    return join(this.folder, THUMBNAIL_FOLDER, `${file}.png`);
+  }
+
+  // Uses the macOS sips tool. For a GIF, sips writes the first frame. If it fails, the grid uses the original file.
+  private async makeThumbnail(file: string): Promise<string | undefined> {
+    const target = this.thumbnailPath(file);
+    try {
+      await mkdir(join(this.folder, THUMBNAIL_FOLDER), { recursive: true });
+      await promisify(execFile)("/usr/bin/sips", [
+        "-s",
+        "format",
+        "png",
+        "-Z",
+        String(THUMBNAIL_SIZE),
+        join(this.folder, file),
+        "--out",
+        target,
+      ]);
+      return target;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async thumbnail(file: string, fileTime: number): Promise<string | undefined> {
+    const existing = await stat(this.thumbnailPath(file)).catch(() => undefined);
+    if (existing && existing.mtimeMs >= fileTime) return this.thumbnailPath(file);
+    return this.makeThumbnail(file);
   }
 
   // Files that you drop into the folder yourself also show up. They use the file time.
@@ -110,18 +185,17 @@ export class Library {
     await mkdir(this.folder, { recursive: true });
     const index = await this.readIndex();
     const files = (await readdir(this.folder)).filter((file) => !file.startsWith(".") && isImagePath(file));
-    const memes = await Promise.all(
-      files.map(async (file) => {
+    const memes: Meme[] = [];
+    // Only 4 at a time, because the first list of a big folder can make many thumbnails.
+    for (let i = 0; i < files.length; i += 4) {
+      const batch = files.slice(i, i + 4).map(async (file) => {
         const path = join(this.folder, file);
-        const entry = index[file] ?? {
-          title: basename(file, extname(file)),
-          tags: [],
-          addedAt: (await stat(path)).mtimeMs,
-          useCount: 0,
-        };
-        return { ...entry, file, path };
-      }),
-    );
+        const fileTime = (await stat(path)).mtimeMs;
+        const entry = index[file] ?? { title: basename(file, extname(file)), tags: [], addedAt: fileTime, useCount: 0 };
+        return { ...entry, file, path, thumbnail: await this.thumbnail(file, fileTime) };
+      });
+      memes.push(...(await Promise.all(batch)));
+    }
     return memes.sort((a, b) => (b.lastUsedAt ?? b.addedAt) - (a.lastUsedAt ?? a.addedAt));
   }
 
@@ -129,18 +203,18 @@ export class Library {
   async add(data: Buffer, title?: string): Promise<{ meme: Meme; duplicate: boolean }> {
     const type = detectImageType(data);
     if (!type) throw new Error("This is not a GIF, PNG, JPEG, WebP, or HEIC image");
-    await mkdir(this.folder, { recursive: true });
     const file = createHash("sha256").update(data).digest("hex").slice(0, 16) + EXTENSIONS[type];
     const path = join(this.folder, file);
-    const index = await this.readIndex();
-    const existing = index[file];
-    if (existing) return { meme: { ...existing, file, path }, duplicate: true };
-    await writeFile(path, data);
-    const cleanTitle = title ? basename(title, extname(title)).replace(/[-_]+/g, " ").trim() : "";
-    const entry: Entry = { title: cleanTitle || "Untitled meme", tags: [], addedAt: Date.now(), useCount: 0 };
-    index[file] = entry;
-    await this.writeIndex(index);
-    return { meme: { ...entry, file, path }, duplicate: false };
+    return this.changeIndex(async (index) => {
+      const existing = index[file];
+      if (existing) return { meme: { ...existing, file, path }, duplicate: true };
+      await writeFile(path, data);
+      const cleanTitle = title ? basename(title, extname(title)).replace(/[-_]+/g, " ").trim() : "";
+      const entry: Entry = { title: cleanTitle || "Untitled meme", tags: [], addedAt: Date.now(), useCount: 0 };
+      index[file] = entry;
+      await this.writeIndex(index);
+      return { meme: { ...entry, file, path, thumbnail: await this.makeThumbnail(file) }, duplicate: false };
+    });
   }
 
   async addFile(path: string): Promise<{ meme: Meme; duplicate: boolean }> {
@@ -148,21 +222,28 @@ export class Library {
   }
 
   async update(meme: Meme, changes: Partial<Pick<Entry, "title" | "tags" | "lastUsedAt" | "useCount">>): Promise<void> {
-    const index = await this.readIndex();
-    const { title, tags, addedAt, lastUsedAt, useCount } = meme;
-    index[meme.file] = { ...(index[meme.file] ?? { title, tags, addedAt, lastUsedAt, useCount }), ...changes };
-    await this.writeIndex(index);
+    await this.changeIndex(async (index) => {
+      const { title, tags, addedAt, lastUsedAt, useCount } = meme;
+      index[meme.file] = { ...(index[meme.file] ?? { title, tags, addedAt, lastUsedAt, useCount }), ...changes };
+      await this.writeIndex(index);
+    });
   }
 
   async markUsed(meme: Meme): Promise<void> {
-    const index = await this.readIndex();
-    await this.update(meme, { lastUsedAt: Date.now(), useCount: (index[meme.file]?.useCount ?? meme.useCount) + 1 });
+    await this.changeIndex(async (index) => {
+      const { title, tags, addedAt, useCount } = meme;
+      const entry = index[meme.file] ?? { title, tags, addedAt, useCount };
+      index[meme.file] = { ...entry, lastUsedAt: Date.now(), useCount: entry.useCount + 1 };
+      await this.writeIndex(index);
+    });
   }
 
   async remove(meme: Meme, deleteFile: (path: string) => Promise<void> = (p) => rm(p)): Promise<void> {
     await deleteFile(meme.path);
-    const index = await this.readIndex();
-    delete index[meme.file];
-    await this.writeIndex(index);
+    await rm(this.thumbnailPath(meme.file), { force: true });
+    await this.changeIndex(async (index) => {
+      delete index[meme.file];
+      await this.writeIndex(index);
+    });
   }
 }

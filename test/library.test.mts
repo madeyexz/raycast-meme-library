@@ -71,8 +71,38 @@ test("Library saves downloads by content type, skips duplicates, and lists recen
     assert.equal(top.useCount, 1);
 
     await library.remove(png.meme);
-    assert.deepEqual((await readdir(library.folder)).sort(), [".meme-library.json", first.meme.file, "notes.txt"].sort());
+    assert.deepEqual((await readdir(library.folder)).sort(), [".meme-library.json", ".thumbnails", first.meme.file, "notes.txt"].sort());
   } finally {
+    server.close();
+  }
+});
+
+test("Library keeps every entry when saves run at the same time, and backs up a damaged index", async () => {
+  const library = new Library(await mkdtemp(join(tmpdir(), "memes-")));
+  // Six different images: the same GIF header with a different trailing byte each.
+  const images = Array.from({ length: 6 }, (_, i) => Buffer.concat([GIF, Buffer.from([i])]));
+  const results = await Promise.all(images.map((data, i) => library.add(data, `meme-${i}.gif`)));
+  const index = JSON.parse(await readFile(join(library.folder, ".meme-library.json"), "utf8"));
+  assert.deepEqual(Object.keys(index).sort(), results.map((r) => r.meme.file).sort());
+
+  await writeFile(join(library.folder, ".meme-library.json"), '{"abc.gif": {"title": "trunc');
+  await library.add(PNG, "after-damage.png");
+  const files = await readdir(library.folder);
+  const backup = files.find((file) => file.startsWith(".meme-library.damaged-"));
+  assert.ok(backup, "the damaged index is kept as a backup");
+  assert.equal(await readFile(join(library.folder, backup), "utf8"), '{"abc.gif": {"title": "trunc');
+  // The grid still lists every image file after the index is lost.
+  assert.equal((await library.list()).length, 7);
+});
+
+test("download stops a slow server after the time limit", async () => {
+  const server = createServer(() => {}); // Never answers.
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const port = (server.address() as { port: number }).port;
+  try {
+    await assert.rejects(download(`http://127.0.0.1:${port}/slow.gif`, 200), /timed out after 0 s/);
+  } finally {
+    server.closeAllConnections();
     server.close();
   }
 });
