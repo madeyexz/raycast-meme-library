@@ -136,7 +136,7 @@ function CopyMeme({ library, meme }: { library: Library; meme: Meme }) {
     <Action
       title="Copy Meme"
       icon={Icon.CopyClipboard}
-      shortcut={Keyboard.Shortcut.Common.Copy}
+      shortcut={{ modifiers: ["cmd", "opt", "shift"], key: "c" }}
       onAction={async () => {
         await Clipboard.copy({ file: meme.path });
         await library.markUsed(meme);
