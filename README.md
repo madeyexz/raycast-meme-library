@@ -4,9 +4,9 @@
 
 A Raycast extension for your own meme library. Save the GIFs and images that you find on X, Threads, and other sites. Then find them again in a grid and paste them with the arrow keys and Enter. You do not have to remember keywords.
 
-![Press ⌘⇧H, select a meme with the arrow keys, and press Enter to paste it](docs/media/grid-paste-en.gif)
+![Press ⌘⇧H, select a meme with the arrow keys, and press Enter to paste it](media/grid-paste-en.gif)
 
-▶️ **[Watch the 28-second demo (MP4, with sound)](docs/media/demo-en.mp4)**
+▶️ **[Watch the 28-second demo (MP4, with sound)](media/demo-en.mp4)**
 
 ## Requirements
 
@@ -40,7 +40,7 @@ Note: ⌘⇧H replaces the Finder shortcut "Go to Home".
 
 | Save a GIF from X | Save a GIF from Threads |
 | --- | --- |
-| ![Share → Copy link on an X post](docs/media/save-x-en.jpg) | ![Right-click → Copy Image on a Threads GIF](docs/media/save-threads-en.jpg) |
+| ![Share → Copy link on an X post](media/save-x-en.jpg) | ![Right-click → Copy Image on a Threads GIF](media/save-threads-en.jpg) |
 
 1. Copy the meme (see the table below).
 2. Run **Save Meme**. The HUD shows "Saved GIF", "Saved image", or "Already in your meme library".
@@ -66,7 +66,7 @@ You can also put image files directly into the library folder.
 
 ## Use a meme
 
-![The Meme Library grid in Raycast](docs/media/grid-en.jpg)
+![The Meme Library grid in Raycast](media/grid-en.jpg)
 
 In Meme Library, the most recently used memes come first. GIFs have a play badge.
 
@@ -83,13 +83,13 @@ In Meme Library, the most recently used memes come first. GIFs have a play badge
 
 In the preferences, you can change Enter to copy instead of paste.
 
-![Search finds a meme by its tag](docs/media/search-en.jpg)
+![Search finds a meme by its tag](media/search-en.jpg)
 
 ## Library folder
 
 Memes are normal files in `~/Memes`. You can change the folder in the preferences.
 
-![The ~/Memes folder in Finder](docs/media/folder-en.jpg)
+![The ~/Memes folder in Finder](media/folder-en.jpg)
 
 - File names are content hashes, so the same meme is not saved two times.
 - `.meme-library.json` keeps the titles, tags, and usage data. If this file is damaged, the extension keeps it as `.meme-library.damaged-<time>.json` and does not overwrite it.

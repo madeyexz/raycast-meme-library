@@ -4,9 +4,9 @@
 
 一個 Raycast 擴充功能，讓你建立自己的梗圖庫。在 X、Threads 或其他網站看到喜歡的 GIF 和圖片，先存起來。要用的時候，在格狀清單裡用方向鍵選好，按 Enter 就能貼上，不用記關鍵字。
 
-![按 ⌘⇧H，用方向鍵選梗圖，按 Enter 貼上](docs/media/grid-paste-zh.gif)
+![按 ⌘⇧H，用方向鍵選梗圖，按 Enter 貼上](media/grid-paste-zh.gif)
 
-▶️ **[觀看 28 秒示範影片（MP4，有聲音）](docs/media/demo-zh.mp4)**
+▶️ **[觀看 28 秒示範影片（MP4，有聲音）](media/demo-zh.mp4)**
 
 ## 需求
 
@@ -40,7 +40,7 @@ npm run build   # 把擴充功能安裝到 Raycast
 
 | 存 X 上的 GIF | 存 Threads 上的 GIF |
 | --- | --- |
-| ![在 X 貼文上按分享 → 複製連結](docs/media/save-x-zh.jpg) | ![在 Threads 的 GIF 上按右鍵 → 複製圖片](docs/media/save-threads-zh.jpg) |
+| ![在 X 貼文上按分享 → 複製連結](media/save-x-zh.jpg) | ![在 Threads 的 GIF 上按右鍵 → 複製圖片](media/save-threads-zh.jpg) |
 
 1. 複製梗圖（方法見下表）。
 2. 執行 **Save Meme**。HUD 會顯示「Saved GIF」、「Saved image」或「Already in your meme library」。
@@ -66,7 +66,7 @@ npm run build   # 把擴充功能安裝到 Raycast
 
 ## 用梗圖
 
-![Raycast 裡的 Meme Library 格狀清單](docs/media/grid-zh.jpg)
+![Raycast 裡的 Meme Library 格狀清單](media/grid-zh.jpg)
 
 在 Meme Library 裡，最近用過的梗圖排在最前面。GIF 會有播放標記。
 
@@ -83,13 +83,13 @@ npm run build   # 把擴充功能安裝到 Raycast
 
 你可以在偏好設定把 Enter 改成「複製」而不是「貼上」。
 
-![用標籤搜尋找到梗圖](docs/media/search-zh.jpg)
+![用標籤搜尋找到梗圖](media/search-zh.jpg)
 
 ## 梗圖庫資料夾
 
 梗圖就是 `~/Memes` 裡的一般檔案。你可以在偏好設定換資料夾。
 
-![Finder 裡的 ~/Memes 資料夾](docs/media/folder-zh.jpg)
+![Finder 裡的 ~/Memes 資料夾](media/folder-zh.jpg)
 
 - 檔名是內容的雜湊值，所以同一張梗圖不會存兩次。
 - `.meme-library.json` 存標題、標籤和使用紀錄。這個檔案損壞時，擴充功能會把它保留成 `.meme-library.damaged-<時間>.json`，不會覆蓋它。
