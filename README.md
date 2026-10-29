@@ -105,5 +105,3 @@ npm test        # library tests in plain Node (the video test needs ffmpeg)
 npm run lint
 npm run build
 ```
-
-The images and videos in `docs/media/` are frames of an animated recreation of the extension, not raw screen recordings.

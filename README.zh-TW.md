@@ -105,5 +105,3 @@ npm test        # 用一般 Node 跑梗圖庫測試（影片測試需要 ffmpeg�
 npm run lint
 npm run build
 ```
-
-`docs/media/` 裡的圖片和影片，是擴充功能的動畫重製畫面，不是直接錄下的螢幕畫面。
